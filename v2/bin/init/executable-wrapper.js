@@ -3,9 +3,13 @@
 import { writeFile, chmod } from 'fs/promises';
 import { platform } from 'os';
 
-export async function createLocalExecutable(workingDir, dryRun = false) {
+export async function createLocalExecutable(
+  workingDir,
+  dryRun = false,
+  detectedPlatform = platform(),
+) {
   try {
-    if (platform() === 'win32') {
+    if (detectedPlatform === 'win32') {
       // Create Windows batch file
       const wrapperScript = `@echo off
 REM Claude-Flow local wrapper
@@ -31,13 +35,18 @@ if exist "%PROJECT_DIR%\\..\\node_modules\\.bin\\claude-flow.cmd" (
   "%PROJECT_DIR%\\..\\node_modules\\.bin\\claude-flow.cmd" %*
   exit /b %ERRORLEVEL%
 )
-
 REM 3. Global installation (npm install -g claude-flow)
-where claude-flow >nul 2>nul
-if %ERRORLEVEL% EQU 0 (
+REM Avoid recursion: skip the current wrapper if found by `where`
+set "_SELF=%~f0"
+set "_GLOBAL_CLAUDE_FLOW="
+for /f "delims=" %%I in ('where claude-flow.cmd 2^>nul') do (
+  if /I not "%%~fI"=="%_SELF%" if not defined _GLOBAL_CLAUDE_FLOW set "_GLOBAL_CLAUDE_FLOW=%%~fI"
+)
+if defined _GLOBAL_CLAUDE_FLOW (
   cd /d "%PROJECT_DIR%"
-  claude-flow %*
+  "%_GLOBAL_CLAUDE_FLOW%" %*
   exit /b %ERRORLEVEL%
+)
 )
 
 REM 4. Fallback to npx (will download if needed)

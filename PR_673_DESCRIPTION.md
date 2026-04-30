@@ -72,78 +72,71 @@ No output displayed to user
 
 ## Solution
 
-Implement comprehensive Windows cmd.exe compatibility through:
+Implemented a two-part fix to ensure stdout/stderr are properly flushed on Windows:
 
-1. **Platform Detection**: Detect cmd.exe vs PowerShell/Windows Terminal
-2. **Graceful UI Degradation**: Fall back to simple console output when Ink fails
-3. **Console Mode Handling**: Properly configure Windows console for ANSI support
-4. **Output Flushing**: Ensure all output is flushed immediately in cmd.exe
+### Part 1: Set Blocking Mode for TTYs
 
-### Implementation Details
+For interactive terminals (cmd.exe, PowerShell), we set stdout/stderr to blocking mode:
 
-**File:** `v2/src/cli/ui/compatible-ui.ts`
-
-Add platform detection and fallback handling:
-
-```typescript
-// Detect if running in cmd.exe
-const isCmdExe = process.platform === 'win32' && 
-  process.env.COMSPEC?.toLowerCase().includes('cmd.exe') &&
-  !process.env.PSModulePath; // PowerShell sets this
-
-const isWindowsTerminal = process.env.WT_SESSION !== undefined;
-const isPowerShell = process.env.PSModulePath !== undefined;
-
-// Use simple console output for cmd.exe, Ink for others
-if (isCmdExe && !isWindowsTerminal) {
-  return useSimpleConsoleUI();
-}
-```
-
-**Console Mode Configuration:**
-
-```typescript
-// Enable ANSI support in cmd.exe
+```javascript
+// Fix for #673: Windows cmd.exe stdout buffering issue
 if (process.platform === 'win32') {
-  const { stdin, stdout, stderr } = process;
-  
-  // Force enable ANSI processing
-  if (stdout.isTTY) {
-    // Set console mode to enable ANSI sequences
-    process.stdout.write('\x1b[0m'); // Reset
-  }
-  
-  // Force immediate flush
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = (chunk: any, ...args: any[]) => {
-    const result = originalWrite(chunk, ...args);
-    if (typeof chunk === 'string') {
-      process.stdout.emit('drain');
+  [process.stdout, process.stderr].forEach((stream) => {
+    if (stream && stream.isTTY && stream._handle && stream._handle.setBlocking) {
+      try {
+        stream._handle.setBlocking(true);
+      } catch (e) {
+        // Ignore errors - some Windows configurations may not support this
+      }
     }
-    return result;
-  };
+  });
 }
 ```
 
-**Fallback UI Handler:**
+This ensures:
+- Output is written synchronously to the terminal
+- No buffering occurs
+- Output appears immediately, not after program exit
 
-```typescript
-function useSimpleConsoleUI() {
-  // Replace Ink spinner with simple dots
-  const spinner = ['.', '..', '...', ''];
-  let i = 0;
-  const interval = setInterval(() => {
-    process.stdout.write('\r' + spinner[i % spinner.length]);
-    i++;
-  }, 250);
-  
-  return {
-    stop: () => clearInterval(interval),
-    succeed: (msg: string) => console.log(`\r✓ ${msg}`),
-    fail: (msg: string) => console.log(`\r✗ ${msg}`),
-  };
-}
+### Part 2: Flush Before Exit
+
+For programmatic exits, we ensure stdout/stderr are flushed before calling `process.exit()`:
+
+```javascript
+cli.run()
+  .then(() => {
+    // #673: Ensure stdout is flushed on Windows before exit
+    if (process.platform === 'win32' && process.stdout.writable) {
+      process.stdout.write('', () => {
+        process.exit(0);
+      });
+    } else {
+      process.exit(0);
+    }
+  })
+  .catch((error) => {
+    console.error('Fatal error:', error.message);
+    if (process.platform === 'win32' && process.stderr.writable) {
+      process.stderr.write('', () => {
+        process.exit(1);
+      });
+    } else {
+      process.exit(1);
+    }
+  });
 ```
+
+This ensures:
+- All buffered output is written before the process terminates
+- The callback ensures the write completes before exit
+- Works for both success (exit 0) and error (exit 1) cases
+
+## Changes Made
+
+### File: `v3/@claude-flow/cli/bin/cli.js`
+
+**Lines 12-27**: Added blocking mode setup for Windows TTYs
+**Lines 179-201**: Added stdout/stderr flush mechanism before exit
 
 ## Usage
 

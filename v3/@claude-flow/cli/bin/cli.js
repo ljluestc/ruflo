@@ -10,6 +10,22 @@
 
 import { randomUUID } from 'crypto';
 
+// Fix for #673: Windows cmd.exe stdout buffering issue
+// On Windows, stdout is non-blocking when piped, which can cause output
+// to be lost when process.exit() is called. Set stdout/stderr to blocking
+// mode to ensure all output is flushed before exit.
+if (process.platform === 'win32') {
+  [process.stdout, process.stderr].forEach((stream) => {
+    if (stream && stream.isTTY && stream._handle && stream._handle.setBlocking) {
+      try {
+        stream._handle.setBlocking(true);
+      } catch (e) {
+        // Ignore errors - some Windows configurations may not support this
+      }
+    }
+  });
+}
+
 // Suppress noisy [AgentDB Patch] warnings from agentic-flow's runtime patch
 // These are cosmetic — the patch tries to fix agentdb v1.x imports but we use v3
 const _origWarn = console.warn;
@@ -160,13 +176,28 @@ if (isMCPMode) {
   const cli = new CLI();
   cli.run()
     .then(() => {
-      // #1552: Exit cleanly after one-shot commands.
-      // Long-running commands (daemon foreground, mcp, status --watch) never resolve,
-      // so this only fires for normal CLI commands.
-      process.exit(0);
+      // #673: Ensure stdout is flushed on Windows before exit
+      // On Windows, stdout is asynchronous when piped and may not flush
+      // before process.exit() is called, causing output to be lost.
+      if (process.platform === 'win32' && process.stdout.writable) {
+        process.stdout.write('', () => {
+          process.exit(0);
+        });
+      } else {
+        // #1552: Exit cleanly after one-shot commands.
+        // Long-running commands (daemon foreground, mcp, status --watch) never resolve,
+        // so this only fires for normal CLI commands.
+        process.exit(0);
+      }
     })
     .catch((error) => {
       console.error('Fatal error:', error.message);
-      process.exit(1);
+      if (process.platform === 'win32' && process.stderr.writable) {
+        process.stderr.write('', () => {
+          process.exit(1);
+        });
+      } else {
+        process.exit(1);
+      }
     });
 }

@@ -24,7 +24,7 @@ This issue had two root causes in different parts of the codebase:
 
 ### Fix 1: v3 CLI - Blocking Mode and Flush (Lines 12-27, 179-201)
 
-```javascript path=/home/calelin/dev/ruflo/v3/@claude-flow/cli/bin/cli.js start=12
+```javascript
 // Fix for #673: Windows cmd.exe stdout buffering issue
 if (process.platform === 'win32') {
   [process.stdout, process.stderr].forEach((stream) => {
@@ -41,7 +41,7 @@ if (process.platform === 'win32') {
 
 And before exit:
 
-```javascript path=/home/calelin/dev/ruflo/v3/@claude-flow/cli/bin/cli.js start=179
+```javascript
 if (process.platform === 'win32' && process.stdout.writable) {
   process.stdout.write('', () => {
     process.exit(0);

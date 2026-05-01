@@ -231,6 +231,29 @@ describe('MCP Client', () => {
       });
     });
 
+
+vi.mock('../src/mcp-tools/hive-mind-tools.js', () => ({
+  hiveMindTools: [
+    {
+      name: 'hive-mind_init',
+      description: 'Initialize hive-mind',
+      category: 'hive-mind',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          topology: { type: 'string' },
+          consensus: { type: 'string' }
+        }
+      },
+      handler: vi.fn(async (input) => ({
+        hiveId: 'hive-test',
+        topology: input.topology || 'hierarchical-mesh',
+        consensus: input.consensus || 'byzantine',
+        status: 'initialized'
+      }))
+    }
+  ]
+}));
     it('should throw MCPClientError for non-existent tool', async () => {
       await expect(
         callMCPTool('nonexistent/tool', {})
@@ -239,6 +262,20 @@ describe('MCP Client', () => {
       await expect(
         callMCPTool('nonexistent/tool', {})
       ).rejects.toThrow('MCP tool not found: nonexistent/tool');
+    });
+
+    it('should resolve legacy slash format to underscore tool name', async () => {
+      const result = await callMCPTool('hive-mind/init', {
+        topology: 'hierarchical-mesh',
+        consensus: 'byzantine'
+      });
+
+      expect(result).toMatchObject({
+        hiveId: 'hive-test',
+        topology: 'hierarchical-mesh',
+        consensus: 'byzantine',
+        status: 'initialized'
+      });
     });
 
     it('should wrap handler errors in MCPClientError', async () => {

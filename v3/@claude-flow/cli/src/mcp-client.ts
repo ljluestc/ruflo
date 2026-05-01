@@ -71,6 +71,21 @@ function registerTools(tools: MCPTool[]): void {
   });
 }
 
+function resolveTool(toolName: string): MCPTool | undefined {
+  const exactMatch = TOOL_REGISTRY.get(toolName);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  // Compatibility fallback for legacy slash-style names like "hive-mind/init"
+  // when the registered MCP tool name uses underscore format "hive-mind_init".
+  if (toolName.includes('/')) {
+    return TOOL_REGISTRY.get(toolName.replace('/', '_'));
+  }
+
+  return undefined;
+}
+
 // Initialize registry with all available tools
 registerTools([
   ...agentTools,
@@ -152,7 +167,7 @@ export async function callMCPTool<T = unknown>(
   context?: Record<string, unknown>
 ): Promise<T> {
   // Look up tool in registry
-  const tool = TOOL_REGISTRY.get(toolName);
+  const tool = resolveTool(toolName);
 
   if (!tool) {
     throw new MCPClientError(

@@ -6,39 +6,59 @@
 
 On some environments (reported on macOS M4), running:
 
-`npx claude-flow hive-mind init`
+```bash
+npx claude-flow hive-mind init
+```
 
 failed with:
 
-`[ERROR] Init error: MCP tool not found: hive-mind/init`
+```
+[ERROR] Init error: MCP tool not found: hive-mind/init
+```
 
-even though the hive-mind init MCP handler exists.
+even though the hive-mind init MCP handler exists. The same command worked correctly on macOS M1 and Windows.
 
 ## Root Cause
 
 The CLI command path used slash-style tool names (`hive-mind/init`), while the MCP tool registry uses underscore naming for this tool (`hive-mind_init`).
 
-`callMCPTool` only performed exact-name lookup, so slash-form calls failed with a false “tool not found” error.
+`callMCPTool` only performed exact-name lookup, so slash-form calls failed with a false "tool not found" error.
 
 ## Solution
 
-Added a compatibility resolver in the MCP client:
+Added a compatibility resolver in the MCP client (`resolveTool` function):
 
-1. Try exact lookup first (no behavior change for existing calls)
-2. If not found and the input name contains `/`, fallback to underscore normalization:
+```typescript
+function resolveTool(toolName: string): MCPTool | undefined {
+  const exactMatch = TOOL_REGISTRY.get(toolName);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  // Compatibility fallback for legacy slash-style names like "hive-mind/init"
+  // when the registered MCP tool name uses underscore format "hive-mind_init".
+  if (toolName.includes('/')) {
+    return TOOL_REGISTRY.get(toolName.replace('/', '_'));
+  }
+
+  return undefined;
+}
+```
+
+This approach:
+1. Tries exact lookup first (no behavior change for existing calls)
+2. Falls back to underscore normalization if not found and name contains `/`
    - `hive-mind/init` -> `hive-mind_init`
-
-This keeps current behavior intact while allowing legacy slash-form invocations to resolve correctly.
 
 ## Files Changed
 
 - `v3/@claude-flow/cli/src/mcp-client.ts`
-  - Added `resolveTool` helper with slash-to-underscore fallback
-  - Updated `callMCPTool` to use compatibility lookup
+  - Added `resolveTool` helper with slash-to-underscore fallback (lines 74-87)
+  - Updated `callMCPTool` to use `resolveTool()` instead of direct registry lookup
 
 - `v3/@claude-flow/cli/__tests__/mcp-client.test.ts`
-  - Added mocked `hive-mind_init` tool registration
-  - Added regression test confirming `callMCPTool('hive-mind/init', ...)` resolves and executes successfully
+  - Added mocked `hive-mind_init` tool registration (lines 235-256)
+  - Added regression test confirming `callMCPTool('hive-mind/init', ...)` resolves correctly (lines 267-279)
 
 ## Validation
 
@@ -49,8 +69,8 @@ npm --prefix /home/calelin/dev/ruflo/v3/@claude-flow/cli run test -- __tests__/m
 ```
 
 Expected result:
-- mcp-client tests pass
-- new legacy-name compatibility test passes
+- All mcp-client tests pass
+- Legacy-name compatibility test passes ("should resolve legacy slash format to underscore tool name")
 
 ## Risk Assessment
 
@@ -58,8 +78,10 @@ Low risk:
 - Exact-name lookups remain unchanged and still take precedence
 - Fallback only applies when exact lookup fails and tool name contains `/`
 - Scope is limited to MCP client tool resolution logic
+- Backward compatible - existing underscore-format calls work as before
 
 ## User Impact
 
 - `hive-mind init` no longer fails due to slash-vs-underscore naming mismatch in MCP tool lookup
+- All platforms (macOS M1/M4, Windows) now work consistently
 - Existing tool names and modern code paths continue working as before

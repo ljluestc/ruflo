@@ -197,7 +197,7 @@ export async function callMCPTool<T = unknown>(
  * @returns Tool metadata or undefined if not found
  */
 export function getToolMetadata(toolName: string): Omit<MCPTool, 'handler'> | undefined {
-  const tool = TOOL_REGISTRY.get(toolName);
+  const tool = resolveTool(toolName);
 
   if (!tool) {
     return undefined;
@@ -248,7 +248,7 @@ export function listMCPTools(category?: string): Array<Omit<MCPTool, 'handler'>>
  * @returns True if tool exists
  */
 export function hasTool(toolName: string): boolean {
-  return TOOL_REGISTRY.has(toolName);
+  return !!resolveTool(toolName);
 }
 
 /**
@@ -279,7 +279,7 @@ export function validateToolInput(
   toolName: string,
   input: Record<string, unknown>
 ): { valid: boolean; errors?: string[] } {
-  const tool = TOOL_REGISTRY.get(toolName);
+  const tool = resolveTool(toolName);
 
   if (!tool) {
     return {

@@ -55,6 +55,9 @@ This approach:
 - `v3/@claude-flow/cli/src/mcp-client.ts`
   - Added `resolveTool` helper with slash-to-underscore fallback (lines 74-87)
   - Updated `callMCPTool` to use `resolveTool()` instead of direct registry lookup
+  - Updated `hasTool` to use `resolveTool()` for consistent slash-to-underscore handling
+  - Updated `getToolMetadata` to use `resolveTool()` for consistent lookups
+  - Updated `validateToolInput` to use `resolveTool()` for consistent lookups
 
 - `v3/@claude-flow/cli/__tests__/mcp-client.test.ts`
   - Added mocked `hive-mind_init` tool registration (lines 235-256)
